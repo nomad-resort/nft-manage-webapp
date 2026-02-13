@@ -43,6 +43,20 @@ export async function POST(request: Request) {
             continue
         }
 
+        // 1.5. Idempotency Check: Don't mint if already successful
+        const { data: existingLog } = await supabase
+            .from('mint_logs')
+            .select('id')
+            .eq('shopify_order_id', orderId)
+            .eq('shopify_product_id', productId)
+            .eq('status', 'success')
+            .single()
+
+        if (existingLog) {
+            console.log(`Order ${orderId} product ${productId} already minted. Skipping.`)
+            continue
+        }
+
         // 2. Mint NFT
         try {
             const mintResult = await mintNFT(
