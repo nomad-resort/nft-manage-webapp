@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import {
   Table,
   TableBody,
@@ -26,7 +26,9 @@ import {
   RefreshCw,
   Settings,
   Key,
+  Info,
 } from "lucide-react"
+import { formatDistanceToNow } from "date-fns"
 
 type AuditAction =
   | "LOGIN"
@@ -36,20 +38,11 @@ type AuditAction =
   | "MINT_RETRY"
   | "SETTINGS_UPDATE"
   | "API_KEY_ROTATE"
-
-type AuditLog = {
-  id: string
-  userId: string
-  userName: string
-  action: AuditAction
-  details: string
-  ipAddress: string
-  createdAt: string
-}
+  | "OTHER"
 
 const actionConfig: Record<
-  AuditAction,
-  { label: string; icon: typeof LogIn; color: string }
+  string,
+  { label: string; icon: any; color: string }
 > = {
   LOGIN: { label: "Login", icon: LogIn, color: "bg-success/10 text-success" },
   LOGOUT: { label: "Logout", icon: LogOut, color: "bg-muted text-muted-foreground" },
@@ -58,110 +51,35 @@ const actionConfig: Record<
   MINT_RETRY: { label: "Mint Retry", icon: RefreshCw, color: "bg-warning/10 text-warning-foreground" },
   SETTINGS_UPDATE: { label: "Settings Updated", icon: Settings, color: "bg-muted text-muted-foreground" },
   API_KEY_ROTATE: { label: "API Key Rotated", icon: Key, color: "bg-destructive/10 text-destructive" },
+  OTHER: { label: "Action", icon: Info, color: "bg-muted text-muted-foreground" }
 }
 
-const auditLogs: AuditLog[] = [
-  {
-    id: "1",
-    userId: "usr_001",
-    userName: "admin@nomadresort.io",
-    action: "MAPPING_UPDATE",
-    details: "Updated mapping: Nomad Explorer Pass -> Explorer Pass Template",
-    ipAddress: "192.168.1.100",
-    createdAt: "2026-02-13 14:35",
-  },
-  {
-    id: "2",
-    userId: "usr_001",
-    userName: "admin@nomadresort.io",
-    action: "MINT_RETRY",
-    details: "Retried mint for order ORD-7819 (Nomad Explorer Pass #141)",
-    ipAddress: "192.168.1.100",
-    createdAt: "2026-02-13 14:30",
-  },
-  {
-    id: "3",
-    userId: "usr_001",
-    userName: "admin@nomadresort.io",
-    action: "LOGIN",
-    details: "Logged in via email/password",
-    ipAddress: "192.168.1.100",
-    createdAt: "2026-02-13 14:00",
-  },
-  {
-    id: "4",
-    userId: "usr_002",
-    userName: "ops@nomadresort.io",
-    action: "MAPPING_CREATE",
-    details: "Created mapping: Island Hopper Bundle -> Bundle Pack Template",
-    ipAddress: "10.0.0.55",
-    createdAt: "2026-02-12 18:22",
-  },
-  {
-    id: "5",
-    userId: "usr_002",
-    userName: "ops@nomadresort.io",
-    action: "API_KEY_ROTATE",
-    details: "Rotated Crossmint API key (production)",
-    ipAddress: "10.0.0.55",
-    createdAt: "2026-02-12 18:10",
-  },
-  {
-    id: "6",
-    userId: "usr_002",
-    userName: "ops@nomadresort.io",
-    action: "SETTINGS_UPDATE",
-    details: "Updated notification email to ops-alerts@nomadresort.io",
-    ipAddress: "10.0.0.55",
-    createdAt: "2026-02-12 18:05",
-  },
-  {
-    id: "7",
-    userId: "usr_001",
-    userName: "admin@nomadresort.io",
-    action: "MINT_RETRY",
-    details: "Retried mint for order ORD-7803 (Beach Villa Access NFT)",
-    ipAddress: "192.168.1.100",
-    createdAt: "2026-02-12 16:45",
-  },
-  {
-    id: "8",
-    userId: "usr_002",
-    userName: "ops@nomadresort.io",
-    action: "LOGIN",
-    details: "Logged in via Google OAuth",
-    ipAddress: "10.0.0.55",
-    createdAt: "2026-02-12 16:00",
-  },
-  {
-    id: "9",
-    userId: "usr_001",
-    userName: "admin@nomadresort.io",
-    action: "LOGOUT",
-    details: "Session ended",
-    ipAddress: "192.168.1.100",
-    createdAt: "2026-02-12 12:30",
-  },
-  {
-    id: "10",
-    userId: "usr_001",
-    userName: "admin@nomadresort.io",
-    action: "MAPPING_UPDATE",
-    details: "Updated mapping: Sunset Lounge Membership -> Membership Token Template",
-    ipAddress: "192.168.1.100",
-    createdAt: "2026-02-12 10:15",
-  },
-]
-
 export function AuditTable() {
+  const [logs, setLogs] = useState<any[]>([])
   const [search, setSearch] = useState("")
   const [actionFilter, setActionFilter] = useState<string>("all")
+  const [loading, setLoading] = useState(true)
 
-  const filtered = auditLogs.filter((log) => {
+  useEffect(() => {
+    fetch('/api/logs?type=audit')
+      .then(res => res.json())
+      .then(data => {
+        setLogs(data || [])
+        setLoading(false)
+      })
+      .catch(err => {
+        console.error(err)
+        setLoading(false)
+      })
+  }, [])
+
+  const filtered = logs.filter((log) => {
+    // Basic client-side filtering
+    const details = typeof log.details === 'string' ? log.details : JSON.stringify(log.details)
     const matchesSearch =
       search === "" ||
-      log.userName.toLowerCase().includes(search.toLowerCase()) ||
-      log.details.toLowerCase().includes(search.toLowerCase())
+      (log.user_id && log.user_id.toLowerCase().includes(search.toLowerCase())) ||
+      details.toLowerCase().includes(search.toLowerCase())
 
     const matchesAction =
       actionFilter === "all" || log.action === actionFilter
@@ -189,12 +107,8 @@ export function AuditTable() {
           <SelectContent>
             <SelectItem value="all">All Actions</SelectItem>
             <SelectItem value="LOGIN">Login</SelectItem>
-            <SelectItem value="LOGOUT">Logout</SelectItem>
-            <SelectItem value="MAPPING_CREATE">Mapping Created</SelectItem>
             <SelectItem value="MAPPING_UPDATE">Mapping Updated</SelectItem>
-            <SelectItem value="MINT_RETRY">Mint Retry</SelectItem>
-            <SelectItem value="SETTINGS_UPDATE">Settings Updated</SelectItem>
-            <SelectItem value="API_KEY_ROTATE">API Key Rotated</SelectItem>
+            {/* Add other actions as they occur */}
           </SelectContent>
         </Select>
       </div>
@@ -208,20 +122,21 @@ export function AuditTable() {
               <TableHead className="w-48">User</TableHead>
               <TableHead className="w-40">Action</TableHead>
               <TableHead>Details</TableHead>
-              <TableHead className="w-32">IP Address</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filtered.map((log) => {
-              const config = actionConfig[log.action]
+              const config = actionConfig[log.action] || actionConfig.OTHER
               const Icon = config.icon
+              const details = typeof log.details === 'string' ? log.details : JSON.stringify(log.details)
+
               return (
                 <TableRow key={log.id}>
                   <TableCell className="text-xs text-muted-foreground font-mono">
-                    {log.createdAt}
+                    {formatDistanceToNow(new Date(log.created_at), { addSuffix: true })}
                   </TableCell>
                   <TableCell className="text-sm text-foreground">
-                    {log.userName}
+                    {log.user_id || 'System'}
                   </TableCell>
                   <TableCell>
                     <Badge
@@ -232,18 +147,15 @@ export function AuditTable() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground max-w-md truncate">
-                    {log.details}
-                  </TableCell>
-                  <TableCell className="text-xs font-mono text-muted-foreground">
-                    {log.ipAddress}
+                    {details}
                   </TableCell>
                 </TableRow>
               )
             })}
-            {filtered.length === 0 && (
+            {!loading && filtered.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={5}
+                  colSpan={4}
                   className="h-24 text-center text-sm text-muted-foreground"
                 >
                   No audit logs found matching your criteria.
@@ -255,7 +167,7 @@ export function AuditTable() {
       </div>
 
       <p className="text-sm text-muted-foreground">
-        {"Showing "}<span className="font-medium text-foreground">{filtered.length}</span>{" of "}<span className="font-medium text-foreground">{auditLogs.length}</span>{" log entries"}
+        {"Showing "}<span className="font-medium text-foreground">{filtered.length}</span>{" of "}<span className="font-medium text-foreground">{logs.length}</span>{" log entries"}
       </p>
     </div>
   )

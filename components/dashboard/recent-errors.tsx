@@ -1,31 +1,32 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { RefreshCw, AlertTriangle } from "lucide-react"
-
-const errors = [
-  {
-    id: "ORD-7819",
-    product: "Nomad Explorer Pass #141",
-    error: "Crossmint API timeout - template not found",
-    time: "12 min ago",
-  },
-  {
-    id: "ORD-7803",
-    product: "Beach Villa Access NFT",
-    error: "Recipient wallet address invalid",
-    time: "2 hours ago",
-  },
-  {
-    id: "ORD-7798",
-    product: "Sunset Lounge Membership",
-    error: "Rate limit exceeded - retry after cooldown",
-    time: "4 hours ago",
-  },
-]
+import { formatDistanceToNow } from "date-fns"
 
 export function RecentErrors() {
+  const [errors, setErrors] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    fetch('/api/dashboard/stats')
+      .then(res => res.json())
+      .then(data => {
+        setErrors(data.recentErrors || [])
+        setLoading(false)
+      })
+      .catch(err => {
+        console.error(err)
+        setLoading(false)
+      })
+  }, [])
+
+  if (loading) {
+    return <Card className="animate-pulse h-[300px] bg-muted/10"></Card>
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -36,31 +37,26 @@ export function RecentErrors() {
       </CardHeader>
       <CardContent>
         <div className="flex flex-col gap-3">
-          {errors.map((error) => (
+          {errors.length === 0 && <p className="text-sm text-muted-foreground">No recent errors.</p>}
+          {errors.map((errorLog) => (
             <div
-              key={error.id}
+              key={errorLog.id}
               className="flex items-start justify-between gap-4 rounded-lg border border-destructive/20 bg-destructive/5 px-4 py-3"
             >
               <div className="flex flex-col gap-1">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-foreground">
-                    {error.product}
-                  </span>
-                  <span className="text-xs font-mono text-muted-foreground">
-                    {error.id}
+                    Order #{errorLog.shopify_order_id}
                   </span>
                 </div>
                 <span className="text-xs text-destructive">
-                  {error.error}
+                  {errorLog.error_message || "Unknown error"}
                 </span>
                 <span className="text-xs text-muted-foreground">
-                  {error.time}
+                  {formatDistanceToNow(new Date(errorLog.created_at), { addSuffix: true })}
                 </span>
               </div>
-              <Button variant="outline" size="sm" className="shrink-0 gap-1.5">
-                <RefreshCw className="size-3" />
-                <span>Retry</span>
-              </Button>
+              {/* Retry button logic could be implemented here */}
             </div>
           ))}
         </div>

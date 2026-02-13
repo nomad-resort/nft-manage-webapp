@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Link2, Unlink, Save, ShoppingBag, Hexagon } from "lucide-react"
+import { Link2, Unlink, Save, ShoppingBag, Hexagon, Loader2, RefreshCw } from "lucide-react"
 
 type ShopifyProduct = {
   id: string
@@ -33,104 +33,83 @@ type Mapping = {
   templateId: string | null
 }
 
-const shopifyProducts: ShopifyProduct[] = [
-  {
-    id: "prod_001",
-    title: "Nomad Explorer Pass",
-    sku: "NEP-2026",
-    price: "$199.00",
-    image: "/placeholder.svg?height=80&width=80",
-    status: "active",
-  },
-  {
-    id: "prod_002",
-    title: "Beach Villa Access NFT",
-    sku: "BVA-2026",
-    price: "$499.00",
-    image: "/placeholder.svg?height=80&width=80",
-    status: "active",
-  },
-  {
-    id: "prod_003",
-    title: "Sunset Lounge Membership",
-    sku: "SLM-2026",
-    price: "$149.00",
-    image: "/placeholder.svg?height=80&width=80",
-    status: "active",
-  },
-  {
-    id: "prod_004",
-    title: "Island Hopper Bundle",
-    sku: "IHB-2026",
-    price: "$699.00",
-    image: "/placeholder.svg?height=80&width=80",
-    status: "draft",
-  },
-  {
-    id: "prod_005",
-    title: "Wellness Retreat Token",
-    sku: "WRT-2026",
-    price: "$299.00",
-    image: "/placeholder.svg?height=80&width=80",
-    status: "active",
-  },
-]
-
-const crossmintTemplates: CrossmintTemplate[] = [
-  {
-    id: "tmpl_001",
-    name: "Explorer Pass Template",
-    collectionName: "Nomad Passes",
-  },
-  {
-    id: "tmpl_002",
-    name: "Villa Access Template",
-    collectionName: "Property Access",
-  },
-  {
-    id: "tmpl_003",
-    name: "Membership Token Template",
-    collectionName: "Memberships",
-  },
-  {
-    id: "tmpl_004",
-    name: "Bundle Pack Template",
-    collectionName: "Bundles",
-  },
-  {
-    id: "tmpl_005",
-    name: "Wellness Token Template",
-    collectionName: "Wellness",
-  },
-]
-
-const initialMappings: Mapping[] = [
-  { product: shopifyProducts[0], templateId: "tmpl_001" },
-  { product: shopifyProducts[1], templateId: "tmpl_002" },
-  { product: shopifyProducts[2], templateId: "tmpl_003" },
-  { product: shopifyProducts[3], templateId: null },
-  { product: shopifyProducts[4], templateId: null },
-]
-
 export function MappingList() {
-  const [mappings, setMappings] = useState<Mapping[]>(initialMappings)
-  const [hasChanges, setHasChanges] = useState(false)
+  const [products, setProducts] = useState<ShopifyProduct[]>([])
+  const [templates, setTemplates] = useState<CrossmintTemplate[]>([])
+  const [mappings, setMappings] = useState<Record<string, string>>({}) // productId -> templateId
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [pendingChanges, setPendingChanges] = useState<Record<string, string | null>>({})
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const [productsRes, templatesRes, mappingsRes] = await Promise.all([
+          fetch('/api/products'),
+          fetch('/api/templates'),
+          fetch('/api/mappings')
+        ])
+
+        const productsData = await productsRes.json()
+        const templatesData = await templatesRes.json()
+        const mappingsData = await mappingsRes.json()
+
+        setProducts(productsData)
+        setTemplates(templatesData)
+
+        const mappingMap: Record<string, string> = {}
+        if (Array.isArray(mappingsData)) {
+          mappingsData.forEach((m: any) => {
+            mappingMap[m.shopify_product_id] = m.crossmint_template_id
+          })
+        }
+        setMappings(mappingMap)
+        setLoading(false)
+      } catch (error) {
+        console.error(error)
+        setLoading(false)
+      }
+    }
+    fetchData()
+  }, [])
 
   function handleTemplateChange(productId: string, templateId: string | null) {
-    setMappings((prev) =>
-      prev.map((m) =>
-        m.product.id === productId ? { ...m, templateId } : m
-      )
-    )
-    setHasChanges(true)
+    setPendingChanges(prev => ({ ...prev, [productId]: templateId }))
   }
 
-  function handleSave() {
-    setHasChanges(false)
+  async function handleSave() {
+    setSaving(true)
+    const promises = Object.entries(pendingChanges).map(([productId, templateId]) => {
+      if (templateId) {
+        return fetch('/api/mappings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ shopify_product_id: productId, crossmint_template_id: templateId })
+        })
+      }
+      return Promise.resolve() // Handle unlink later if needed
+    })
+
+    await Promise.all(promises)
+
+    // Update local state
+    setMappings(prev => {
+      const next = { ...prev }
+      Object.entries(pendingChanges).forEach(([pid, tid]) => {
+        if (tid) next[pid] = tid
+      })
+      return next
+    })
+    setPendingChanges({})
+    setSaving(false)
   }
 
-  const linkedCount = mappings.filter((m) => m.templateId).length
-  const totalCount = mappings.length
+  if (loading) return <div className="flex justify-center p-8"><Loader2 className="animate-spin" /></div>
+
+  const linkedCount = Object.keys(mappings).length + Object.keys(pendingChanges).filter(k => pendingChanges[k]).length - Object.keys(pendingChanges).filter(k => mappings[k] && !pendingChanges[k]).length // Approximation
+  // Simplified count logic:
+  const currentMappings = { ...mappings, ...pendingChanges }
+  const activeCount = Object.values(currentMappings).filter(Boolean).length
 
   return (
     <div className="flex flex-col gap-6">
@@ -140,14 +119,18 @@ export function MappingList() {
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Link2 className="size-4" />
             <span>
-              <span className="font-semibold text-foreground">{linkedCount}</span>
-              {" / "}{totalCount}{" products linked"}
+              <span className="font-semibold text-foreground">{activeCount}</span>
+              {" / "}{products.length}{" products linked"}
             </span>
           </div>
+          <Button variant="outline" size="sm" onClick={() => window.location.reload()} className="gap-2">
+            <RefreshCw className="size-3.5" />
+            Sync Products
+          </Button>
         </div>
-        {hasChanges && (
-          <Button onClick={handleSave} className="gap-2">
-            <Save className="size-4" />
+        {Object.keys(pendingChanges).length > 0 && (
+          <Button onClick={handleSave} disabled={saving} className="gap-2">
+            {saving ? <Loader2 className="animate-spin size-4" /> : <Save className="size-4" />}
             Save Changes
           </Button>
         )}
@@ -155,15 +138,14 @@ export function MappingList() {
 
       {/* Mapping cards */}
       <div className="flex flex-col gap-4">
-        {mappings.map((mapping) => {
-          const selectedTemplate = crossmintTemplates.find(
-            (t) => t.id === mapping.templateId
-          )
-          const isLinked = !!mapping.templateId
+        {products.map((product) => {
+          const currentTemplateId = pendingChanges[product.id] !== undefined ? pendingChanges[product.id] : mappings[product.id]
+          const isLinked = !!currentTemplateId
+          const selectedTemplate = templates.find(t => t.id === currentTemplateId)
 
           return (
             <Card
-              key={mapping.product.id}
+              key={product.id}
               className={
                 isLinked
                   ? "border-primary/20 bg-primary/[0.02]"
@@ -180,26 +162,26 @@ export function MappingList() {
                     <div className="flex flex-col gap-0.5">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-semibold text-foreground">
-                          {mapping.product.title}
+                          {product.title}
                         </span>
                         <Badge
                           variant={
-                            mapping.product.status === "active"
+                            product.status === "active"
                               ? "default"
                               : "secondary"
                           }
                           className={
-                            mapping.product.status === "active"
+                            product.status === "active"
                               ? "bg-success/10 text-success hover:bg-success/20 border-0 text-xs"
                               : "text-xs"
                           }
                         >
-                          {mapping.product.status}
+                          {product.status}
                         </Badge>
                       </div>
                       <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                        <span className="font-mono">{mapping.product.sku}</span>
-                        <span>{mapping.product.price}</span>
+                        <span className="font-mono">{product.sku}</span>
+                        <span>{product.price}</span>
                       </div>
                     </div>
                   </div>
@@ -231,10 +213,10 @@ export function MappingList() {
                         Crossmint Template
                       </span>
                       <Select
-                        value={mapping.templateId ?? "none"}
+                        value={currentTemplateId || "none"}
                         onValueChange={(value) =>
                           handleTemplateChange(
-                            mapping.product.id,
+                            product.id,
                             value === "none" ? null : value
                           )
                         }
@@ -246,7 +228,7 @@ export function MappingList() {
                           <SelectItem value="none">
                             Not linked
                           </SelectItem>
-                          {crossmintTemplates.map((template) => (
+                          {templates.map((template) => (
                             <SelectItem key={template.id} value={template.id}>
                               <div className="flex flex-col">
                                 <span>{template.name}</span>

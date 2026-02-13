@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import {
   Table,
   TableBody,
@@ -27,7 +27,9 @@ import {
   ExternalLink,
   ChevronLeft,
   ChevronRight,
+  Loader2,
 } from "lucide-react"
+import { formatDistanceToNow } from "date-fns"
 
 type MintStatus = "success" | "error" | "pending"
 
@@ -42,108 +44,6 @@ type Order = {
   crossmintActionId?: string
   createdAt: string
 }
-
-const orders: Order[] = [
-  {
-    id: "1",
-    shopifyOrderId: "ORD-7821",
-    productName: "Nomad Explorer Pass #142",
-    recipientType: "email",
-    recipient: "alex@example.com",
-    status: "success",
-    crossmintActionId: "act_abc123",
-    createdAt: "2026-02-13 14:32",
-  },
-  {
-    id: "2",
-    shopifyOrderId: "ORD-7820",
-    productName: "Beach Villa Access NFT",
-    recipientType: "wallet",
-    recipient: "0x1a2b3c4d5e6f...9f3d",
-    status: "success",
-    crossmintActionId: "act_def456",
-    createdAt: "2026-02-13 14:28",
-  },
-  {
-    id: "3",
-    shopifyOrderId: "ORD-7819",
-    productName: "Nomad Explorer Pass #141",
-    recipientType: "email",
-    recipient: "sarah@example.com",
-    status: "error",
-    errorMessage: "Crossmint API timeout - template not found",
-    createdAt: "2026-02-13 14:21",
-  },
-  {
-    id: "4",
-    shopifyOrderId: "ORD-7818",
-    productName: "Sunset Lounge Membership",
-    recipientType: "email",
-    recipient: "mike@example.com",
-    status: "success",
-    crossmintActionId: "act_ghi789",
-    createdAt: "2026-02-13 14:15",
-  },
-  {
-    id: "5",
-    shopifyOrderId: "ORD-7817",
-    productName: "Beach Villa Access NFT",
-    recipientType: "wallet",
-    recipient: "0x8c4e7d2a1b...2a1b",
-    status: "success",
-    crossmintActionId: "act_jkl012",
-    createdAt: "2026-02-13 14:08",
-  },
-  {
-    id: "6",
-    shopifyOrderId: "ORD-7816",
-    productName: "Island Hopper Bundle",
-    recipientType: "email",
-    recipient: "emma@example.com",
-    status: "pending",
-    createdAt: "2026-02-13 14:02",
-  },
-  {
-    id: "7",
-    shopifyOrderId: "ORD-7815",
-    productName: "Wellness Retreat Token",
-    recipientType: "email",
-    recipient: "james@example.com",
-    status: "success",
-    crossmintActionId: "act_mno345",
-    createdAt: "2026-02-13 13:55",
-  },
-  {
-    id: "8",
-    shopifyOrderId: "ORD-7814",
-    productName: "Nomad Explorer Pass #140",
-    recipientType: "wallet",
-    recipient: "0x3f5a8b9c1d...7e2f",
-    status: "error",
-    errorMessage: "Recipient wallet address invalid",
-    createdAt: "2026-02-13 13:48",
-  },
-  {
-    id: "9",
-    shopifyOrderId: "ORD-7813",
-    productName: "Sunset Lounge Membership",
-    recipientType: "email",
-    recipient: "olivia@example.com",
-    status: "success",
-    crossmintActionId: "act_pqr678",
-    createdAt: "2026-02-13 13:40",
-  },
-  {
-    id: "10",
-    shopifyOrderId: "ORD-7812",
-    productName: "Beach Villa Access NFT",
-    recipientType: "email",
-    recipient: "david@example.com",
-    status: "success",
-    crossmintActionId: "act_stu901",
-    createdAt: "2026-02-13 13:33",
-  },
-]
 
 function StatusBadge({ status }: { status: MintStatus }) {
   if (status === "success") {
@@ -164,8 +64,34 @@ function StatusBadge({ status }: { status: MintStatus }) {
 }
 
 export function OrdersTable() {
+  const [orders, setOrders] = useState<Order[]>([])
+  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
+
+  useEffect(() => {
+    fetch('/api/logs?type=mint')
+      .then(res => res.json())
+      .then(data => {
+        // Transform data to match Order type
+        const formattedOrders = data.map((log: any) => ({
+          id: log.id,
+          shopifyOrderId: log.shopify_order_id,
+          productName: log.product_name || "Unknown Product",
+          recipientType: log.recipient_wallet ? "wallet" : "email",
+          recipient: log.recipient_wallet || log.recipient_email || "Unknown",
+          status: log.status,
+          errorMessage: log.error_message,
+          createdAt: log.created_at
+        }))
+        setOrders(formattedOrders)
+        setLoading(false)
+      })
+      .catch(err => {
+        console.error(err)
+        setLoading(false)
+      })
+  }, [])
 
   const filtered = orders.filter((order) => {
     const matchesSearch =
@@ -179,6 +105,11 @@ export function OrdersTable() {
 
     return matchesSearch && matchesStatus
   })
+
+  // Pagination placeholder (could implementing client-side pagination if list is long)
+  // For now just showing all
+
+  if (loading) return <div className="flex justify-center p-8"><Loader2 className="animate-spin" /></div>
 
   return (
     <div className="flex flex-col gap-4">
@@ -248,19 +179,15 @@ export function OrdersTable() {
                 </TableCell>
                 <TableCell>
                   {order.status === "error" && order.errorMessage ? (
-                    <span className="text-xs text-destructive">
+                    <span className="text-xs text-destructive max-w-xs truncate block" title={order.errorMessage}>
                       {order.errorMessage}
-                    </span>
-                  ) : order.crossmintActionId ? (
-                    <span className="text-xs font-mono text-muted-foreground">
-                      {order.crossmintActionId}
                     </span>
                   ) : (
                     <span className="text-xs text-muted-foreground">--</span>
                   )}
                 </TableCell>
                 <TableCell className="text-xs text-muted-foreground">
-                  {order.createdAt}
+                  {formatDistanceToNow(new Date(order.createdAt), { addSuffix: true })}
                 </TableCell>
                 <TableCell className="text-right">
                   <div className="flex items-center justify-end gap-1">
@@ -270,20 +197,10 @@ export function OrdersTable() {
                         size="icon"
                         className="size-7"
                         title="Retry mint"
+                      // Add retry handler here
                       >
                         <RefreshCw className="size-3.5" />
                         <span className="sr-only">Retry</span>
-                      </Button>
-                    )}
-                    {order.crossmintActionId && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-7"
-                        title="View on Crossmint"
-                      >
-                        <ExternalLink className="size-3.5" />
-                        <span className="sr-only">View on Crossmint</span>
                       </Button>
                     )}
                   </div>
@@ -304,30 +221,10 @@ export function OrdersTable() {
         </Table>
       </div>
 
-      {/* Pagination */}
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
           {"Showing "}<span className="font-medium text-foreground">{filtered.length}</span>{" of "}<span className="font-medium text-foreground">{orders.length}</span>{" orders"}
         </p>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="icon" className="size-8" disabled>
-            <ChevronLeft className="size-4" />
-            <span className="sr-only">Previous page</span>
-          </Button>
-          <Button variant="outline" size="sm" className="h-8 min-w-8 px-3 bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground">
-            1
-          </Button>
-          <Button variant="outline" size="sm" className="h-8 min-w-8 px-3">
-            2
-          </Button>
-          <Button variant="outline" size="sm" className="h-8 min-w-8 px-3">
-            3
-          </Button>
-          <Button variant="outline" size="icon" className="size-8">
-            <ChevronRight className="size-4" />
-            <span className="sr-only">Next page</span>
-          </Button>
-        </div>
       </div>
     </div>
   )
